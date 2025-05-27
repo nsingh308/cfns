@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Aurora Serverless PostgreSQL cluster (Serverless mode) with credentials managed by Secrets Manager
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to deploy the DB
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnets for the DB subnet group
+  DBMasterUsername:
+    Type: String
+    Default: postgres
+    Description: Master username for the DB
+  KMSKeyId:
+    Type: String
+    Default: "arn:aws:kms:us-east-1:1234567890:key/8f2323287e3-1f1b-497f-92323ceb-13b83d"
+    Description: KMS Key Id
+Resources:
+  PostgresSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow Lambda access to Aurora Serverless Postgres
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+
+  PostgresSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for Aurora Serverless Postgres
+      SubnetIds: !Ref SubnetIds
+
+  AuroraServerlessCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: 16.6
+      EngineMode: provisioned
+      KmsKeyId: !Ref KMSKeyId
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0.5
+        MaxCapacity: 8
+      MasterUsername: !Ref DBMasterUsername
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref PostgresSubnetGroup
+      StorageEncrypted: true
+      VpcSecurityGroupIds:
+        - !Ref PostgresSecurityGroup
+  DBInstance1c:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraServerlessCluster
+      Engine: aurora-postgresql
+      PubliclyAccessible: true
+      DBInstanceClass: db.serverless
+      AvailabilityZone: us-east-1c
+Outputs:
+  DBClusterEndpoint:
+    Description: Cluster endpoint address
+    Value: !GetAtt AuroraServerlessCluster.Endpoint.Address
+  DBClusterPort:
+    Description: Cluster port
+    Value: !GetAtt AuroraServerlessCluster.Endpoint.Port
+  DBSecretArn:
+    Description: ARN of the Secrets Manager secret created by RDS
+    Value: !GetAtt AuroraServerlessCluster.MasterUserSecret.SecretArn
